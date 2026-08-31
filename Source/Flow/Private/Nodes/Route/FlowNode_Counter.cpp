@@ -1,13 +1,9 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #include "Nodes/Route/FlowNode_Counter.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(FlowNode_Counter)
 
-UFlowNode_Counter::UFlowNode_Counter(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-	, Goal(2)
-	, CurrentSum(0)
+UFlowNode_Counter::UFlowNode_Counter()
 {
 #if WITH_EDITOR
 	Category = TEXT("Route");

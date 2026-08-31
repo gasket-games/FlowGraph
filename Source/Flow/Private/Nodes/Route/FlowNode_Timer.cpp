@@ -1,7 +1,5 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #include "Nodes/Route/FlowNode_Timer.h"
-#include "FlowSettings.h"
 
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -12,14 +10,7 @@
 
 FName UFlowNode_Timer::INPIN_CompletionTime;
 
-UFlowNode_Timer::UFlowNode_Timer(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-	, CompletionTime(1.0f)
-	, StepTime(0.0f)
-	, ResolvedCompletionTime(0.0f)
-	, SumOfSteps(0.0f)
-	, RemainingCompletionTime(0.0f)
-	, RemainingStepTime(0.0f)
+UFlowNode_Timer::UFlowNode_Timer()
 {
 #if WITH_EDITOR
 	Category = TEXT("Route");
@@ -34,7 +25,7 @@ UFlowNode_Timer::UFlowNode_Timer(const FObjectInitializer& ObjectInitializer)
 	OutputPins.Add(FFlowPin(TEXT("Step")));
 	OutputPins.Add(FFlowPin(TEXT("Skipped")));
 
-	INPIN_CompletionTime = GET_MEMBER_NAME_CHECKED(UFlowNode_Timer, CompletionTime);
+	INPIN_CompletionTime = GET_MEMBER_NAME_CHECKED(ThisClass, CompletionTime);
 }
 
 void UFlowNode_Timer::InitializeInstance()
@@ -107,18 +98,10 @@ void UFlowNode_Timer::Restart()
 float UFlowNode_Timer::ResolveCompletionTime() const
 {
 	// Get the CompletionTime from either the default (property) or the data pin (if connected)
-	FFlowDataPinResult_Float CompletionTimeResult = TryResolveDataPinAsFloat(INPIN_CompletionTime);
+	float ResolvedTime = CompletionTime;
+	TryResolveDataPinValue<FFlowPinType_Float>(INPIN_CompletionTime, ResolvedTime);
 
-	if (CompletionTimeResult.Result == EFlowDataPinResolveResult::FailedMissingPin)
-	{
-		// Handle lookup of a UFlowNode_Timer that predated DataPins
-		CompletionTimeResult.Result = EFlowDataPinResolveResult::Success;
-		CompletionTimeResult.Value = CompletionTime;
-	}
-
-	check(CompletionTimeResult.Result == EFlowDataPinResolveResult::Success);
-
-	return static_cast<float>(CompletionTimeResult.Value);
+	return ResolvedTime;
 }
 
 void UFlowNode_Timer::OnStep()
@@ -192,13 +175,29 @@ void UFlowNode_Timer::OnLoad_Implementation()
 }
 
 #if WITH_EDITOR
+FString UFlowNode_Timer::GetStatusString() const
+{
+	FString ProgressString;
+	if (StepTime > 0.0f)
+	{
+		ProgressString = FString::Printf(TEXT("%.*f"), 2, SumOfSteps);
+	}
+	else if (CompletionTimerHandle.IsValid() && GetWorld())
+	{
+		ProgressString = FString::Printf(TEXT("%.*f"), 2, GetWorld()->GetTimerManager().GetTimerElapsed(CompletionTimerHandle));
+	}
+
+	if (!ProgressString.IsEmpty())
+	{
+		return FText::Format(LOCTEXT("ProgressStatus", "Progress: {0}"), { FText::FromString(ProgressString) }).ToString();
+	}
+
+	return FString();
+}
 
 void UFlowNode_Timer::UpdateNodeConfigText_Implementation()
 {
-	constexpr bool bErrorIfInputPinNotFound = false;
-	const bool bIsInputConnected = IsInputConnected(INPIN_CompletionTime);
-
-	if (bIsInputConnected)
+	if (IsInputConnected(INPIN_CompletionTime))
 	{
 		// CompletionTime will be sourced from the data pin
 
@@ -236,27 +235,6 @@ void UFlowNode_Timer::UpdateNodeConfigText_Implementation()
 		SetNodeConfigText(FText(LOCTEXT("CompletesNextTick", "Completes in next tick")));
 	}
 }
-
-FString UFlowNode_Timer::GetStatusString() const
-{
-	FString ProgressString;
-	if (StepTime > 0.0f)
-	{
-		ProgressString = FString::Printf(TEXT("%.*f"), 2, SumOfSteps);
-	}
-	else if (CompletionTimerHandle.IsValid() && GetWorld())
-	{
-		ProgressString = FString::Printf(TEXT("%.*f"), 2, GetWorld()->GetTimerManager().GetTimerElapsed(CompletionTimerHandle));
-	}
-
-	if (!ProgressString.IsEmpty())
-	{
-		return FText::Format(LOCTEXT("ProgressStatus", "Progress: {0}"), { FText::FromString(ProgressString) }).ToString();
-	}
-
-	return FString();
-}
-
 #endif
 
 #undef LOCTEXT_NAMESPACE

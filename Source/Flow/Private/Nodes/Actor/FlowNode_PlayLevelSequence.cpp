@@ -1,5 +1,4 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #include "Nodes/Actor/FlowNode_PlayLevelSequence.h"
 
 #include "FlowAsset.h"
@@ -21,19 +20,7 @@
 FFlowNodeLevelSequenceEvent UFlowNode_PlayLevelSequence::OnPlaybackStarted;
 FFlowNodeLevelSequenceEvent UFlowNode_PlayLevelSequence::OnPlaybackCompleted;
 
-UFlowNode_PlayLevelSequence::UFlowNode_PlayLevelSequence(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-	, bPlayReverse(false)
-	, bUseGraphOwnerAsTransformOrigin(false)
-	, bReplicates(false)
-	, bAlwaysRelevant(false)
-	, bApplyOwnerTimeDilation(true)
-	, LoadedSequence(nullptr)
-	, SequencePlayer(nullptr)
-	, CachedPlayRate(0)
-	, StartTime(0.0f)
-	, ElapsedTime(0.0f)
-	, TimeDilation(1.0f)
+UFlowNode_PlayLevelSequence::UFlowNode_PlayLevelSequence()
 {
 #if WITH_EDITOR
 	Category = TEXT("Actor");
@@ -55,14 +42,14 @@ UFlowNode_PlayLevelSequence::UFlowNode_PlayLevelSequence(const FObjectInitialize
 #if WITH_EDITOR
 TArray<FFlowPin> UFlowNode_PlayLevelSequence::GetContextOutputs() const
 {
+	TArray<FFlowPin> Pins = Super::GetContextOutputs();
+
 	if (Sequence.IsNull())
 	{
-		return TArray<FFlowPin>();
+		return Pins;
 	}
 
-	TArray<FFlowPin> Pins = {};
-
-	Sequence.LoadSynchronous();
+	(void)Sequence.LoadSynchronous();
 	if (Sequence && Sequence->GetMovieScene())
 	{
 		for (const UMovieSceneTrack* Track : Sequence->GetMovieScene()->GetTracks())
@@ -75,9 +62,10 @@ TArray<FFlowPin> UFlowNode_PlayLevelSequence::GetContextOutputs() const
 					{
 						for (const FString& EventName : FlowSection->GetAllEntryPoints())
 						{
-							if (!EventName.IsEmpty() && !Pins.Contains(EventName))
+							FFlowPin NewEventPin(EventName);
+							if (!EventName.IsEmpty() && !Pins.Contains(NewEventPin))
 							{
-								Pins.Emplace(EventName);
+								Pins.Emplace(NewEventPin);
 							}
 						}
 					}
@@ -100,23 +88,43 @@ void UFlowNode_PlayLevelSequence::PostEditChangeProperty(FPropertyChangedEvent& 
 }
 #endif
 
-void UFlowNode_PlayLevelSequence::PreloadContent()
+EFlowPreloadResult UFlowNode_PlayLevelSequence::PreloadContent()
 {
 #if ENABLE_VISUAL_LOG
-	UE_VLOG(this, LogFlow, Log, TEXT("Preloading"));
+	UE_VLOG(this, LogFlow, Log, TEXT("Preloading Content"));
 #endif
 
-	if (!Sequence.IsNull())
+	FLOW_ASSERT_ENUM_MAX(EFlowPreloadResult, 2);
+
+	if (Sequence.IsNull())
 	{
-		StreamableManager.RequestAsyncLoad({Sequence.ToSoftObjectPath()}, FStreamableDelegate());
+		return EFlowPreloadResult::Completed;
 	}
+
+	// Bind a weak delegate so NotifyPreloadComplete() is called when streaming finishes.
+	// If the asset is already cached, RequestAsyncLoad fires the delegate synchronously
+	// (safe — PendingPreloadCount is already set by TriggerPreload before this call).
+	PreloadHandle = StreamableManager.RequestAsyncLoad(
+		Sequence.ToSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [this]()
+		{
+			NotifyPreloadComplete();
+		}));
+
+	return EFlowPreloadResult::PreloadInProgress;
 }
 
 void UFlowNode_PlayLevelSequence::FlushContent()
 {
 #if ENABLE_VISUAL_LOG
-	UE_VLOG(this, LogFlow, Log, TEXT("Flushing preload"));
+	UE_VLOG(this, LogFlow, Log, TEXT("Flushing Preloaded Content"));
 #endif
+
+	if (PreloadHandle.IsValid())
+	{
+		PreloadHandle->CancelHandle();
+		PreloadHandle.Reset();
+	}
 
 	if (!Sequence.IsNull())
 	{
@@ -166,6 +174,13 @@ void UFlowNode_PlayLevelSequence::CreatePlayer()
 
 void UFlowNode_PlayLevelSequence::ExecuteInput(const FName& PinName)
 {
+	// Since this node implements IFlowPreloadableInterface,
+	// we need to call this to allow the PreloadHelper to intercept preload-specific PinNames
+	if (DispatchExecuteInputToPreloadHelper(PinName))
+	{
+		return;
+	}
+
 	if (PinName == TEXT("Start"))
 	{
 		LoadedSequence = Sequence.LoadSynchronous();
@@ -320,6 +335,16 @@ FString UFlowNode_PlayLevelSequence::GetNodeDescription() const
 	return Sequence.IsNull() ? TEXT("[No sequence]") : Sequence.GetAssetName();
 }
 
+FString UFlowNode_PlayLevelSequence::GetStatusString() const
+{
+	return GetPlaybackProgress();
+}
+
+UObject* UFlowNode_PlayLevelSequence::GetAssetToEdit()
+{
+	return Sequence.IsNull() ? nullptr : Sequence.LoadSynchronous();
+}
+
 EDataValidationResult UFlowNode_PlayLevelSequence::ValidateNode()
 {
 	if (Sequence.IsNull())
@@ -329,16 +354,6 @@ EDataValidationResult UFlowNode_PlayLevelSequence::ValidateNode()
 	}
 
 	return EDataValidationResult::Valid;
-}
-
-FString UFlowNode_PlayLevelSequence::GetStatusString() const
-{
-	return GetPlaybackProgress();
-}
-
-UObject* UFlowNode_PlayLevelSequence::GetAssetToEdit()
-{
-	return Sequence.IsNull() ? nullptr : Sequence.LoadSynchronous();
 }
 #endif
 

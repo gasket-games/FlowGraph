@@ -1,5 +1,4 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #pragma once
 
 #include "EngineDefines.h"
@@ -7,6 +6,7 @@
 #include "LevelSequencePlayer.h"
 #include "MovieSceneSequencePlayer.h"
 
+#include "Interfaces/FlowPreloadableInterface.h"
 #include "Nodes/FlowNode.h"
 #include "FlowNode_PlayLevelSequence.generated.h"
 
@@ -22,12 +22,18 @@ DECLARE_MULTICAST_DELEGATE(FFlowNodeLevelSequenceEvent);
  * - Completed
  */
 UCLASS(NotBlueprintable, meta = (DisplayName = "Play Level Sequence"))
-class FLOW_API UFlowNode_PlayLevelSequence : public UFlowNode
+class FLOW_API UFlowNode_PlayLevelSequence
+	: public UFlowNode
+	  , public IFlowPreloadableInterface
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
+
+public:
+	UFlowNode_PlayLevelSequence();
+
 	friend struct FFlowTrackExecutionToken;
 
-public:	
+public:
 	static FFlowNodeLevelSequenceEvent OnPlaybackStarted;
 	static FFlowNodeLevelSequenceEvent OnPlaybackCompleted;
 
@@ -38,30 +44,30 @@ public:
 	FMovieSceneSequencePlaybackSettings PlaybackSettings;
 
 	UPROPERTY(EditAnywhere, Category = "Sequence")
-	bool bPlayReverse;
+	bool bPlayReverse = false;
 
 	UPROPERTY(EditAnywhere, Category = "Sequence")
 	FLevelSequenceCameraSettings CameraSettings;
-	
-	// Level Sequence playback can be moved to any place in the world by applying Transform Origin
-	// Enabling this option will use actor that created Root Flow instance, i.e. World Settings or Player Controller
-	// https://docs.unrealengine.com/5.0/en-US/creating-level-sequences-with-dynamic-transforms-in-unreal-engine/
-	UPROPERTY(EditAnywhere, Category = "Sequence")
-	bool bUseGraphOwnerAsTransformOrigin;
 
-	// If true, playback of this level sequence on the server will be synchronized across other clients
+	/* Level Sequence playback can be moved to any place in the world by applying Transform Origin.
+	 * Enabling this option will use actor that created Root Flow instance, i.e. World Settings or Player Controller/
+	 * See https://docs.unrealengine.com/5.0/en-US/creating-level-sequences-with-dynamic-transforms-in-unreal-engine/ */
 	UPROPERTY(EditAnywhere, Category = "Sequence")
-	bool bReplicates;
+	bool bUseGraphOwnerAsTransformOrigin = false;
 
-	// Always relevant for network (overrides bOnlyRelevantToOwner)
+	/* If true, playback of this level sequence on the server will be synchronized across other clients. */
 	UPROPERTY(EditAnywhere, Category = "Sequence")
-	bool bAlwaysRelevant;
+	bool bReplicates = false;
 
-	// If True, Play Rate will by multiplied by Custom Time Dilation
-	// Enabling this option will use Custom Time Dilation from actor that created Root Flow instance, i.e. World Settings or Player Controller
+	/* Always relevant for network (overrides bOnlyRelevantToOwner). */
 	UPROPERTY(EditAnywhere, Category = "Sequence")
-	bool bApplyOwnerTimeDilation;
-	
+	bool bAlwaysRelevant = false;
+
+	/* If True, Play Rate will be multiplied by Custom Time Dilation.
+	 * Enabling this option will use Custom Time Dilation from actor that created Root Flow instance, i.e. World Settings or Player Controller. */
+	UPROPERTY(EditAnywhere, Category = "Sequence")
+	bool bApplyOwnerTimeDilation = true;
+
 protected:
 	UPROPERTY()
 	TObjectPtr<ULevelSequence> LoadedSequence;
@@ -69,19 +75,21 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UFlowLevelSequencePlayer> SequencePlayer;
 
-	// Play Rate set by the user in PlaybackSettings
-	float CachedPlayRate;
+	/* Play Rate set by the user in PlaybackSettings. */
+	float CachedPlayRate = 0.0f;
 
 	UPROPERTY(SaveGame)
-	float StartTime;
+	float StartTime = 0.0f;
 
 	UPROPERTY(SaveGame)
-	float ElapsedTime;
+	float ElapsedTime = 0.0f;
 
 	UPROPERTY(SaveGame)
-	float TimeDilation;
+	float TimeDilation = 1.0f;
 
 	FStreamableManager StreamableManager;
+
+	TSharedPtr<FStreamableHandle> PreloadHandle;
 
 public:
 #if WITH_EDITOR
@@ -93,13 +101,14 @@ public:
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
-	virtual void PreloadContent() override;
+	// IFlowPreloadableInterface
+	virtual EFlowPreloadResult PreloadContent() override;
 	virtual void FlushContent() override;
+	// --
 
 	virtual void InitializeInstance() override;
 	void CreatePlayer();
 
-protected:
 	virtual void ExecuteInput(const FName& PinName) override;
 
 	virtual void OnSave_Implementation() override;
@@ -117,8 +126,6 @@ protected:
 
 public:
 	virtual void StopPlayback();
-
-protected:
 	virtual void Cleanup() override;
 
 public:
@@ -126,13 +133,15 @@ public:
 
 #if WITH_EDITOR
 	virtual FString GetNodeDescription() const override;
-	virtual EDataValidationResult ValidateNode() override;
-	
 	virtual FString GetStatusString() const override;
 	virtual UObject* GetAssetToEdit() override;
+	
+protected:	
+	virtual EDataValidationResult ValidateNode() override;
 #endif
 
 #if ENABLE_VISUAL_LOG
+public:	
 	virtual void GrabDebugSnapshot(struct FVisualLogEntry* Snapshot) const override;
 #endif
 };

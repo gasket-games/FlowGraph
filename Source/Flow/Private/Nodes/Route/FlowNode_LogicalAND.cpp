@@ -1,11 +1,9 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #include "Nodes/Route/FlowNode_LogicalAND.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(FlowNode_LogicalAND)
 
-UFlowNode_LogicalAND::UFlowNode_LogicalAND(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+UFlowNode_LogicalAND::UFlowNode_LogicalAND()
 {
 #if WITH_EDITOR
 	Category = TEXT("Route|Logic");

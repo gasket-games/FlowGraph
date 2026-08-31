@@ -1,6 +1,6 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #include "Nodes/Actor/FlowNode_NotifyActor.h"
+
 #include "FlowComponent.h"
 #include "FlowSubsystem.h"
 
@@ -9,11 +9,7 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(FlowNode_NotifyActor)
 
-UFlowNode_NotifyActor::UFlowNode_NotifyActor(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-	, MatchType(EGameplayContainerMatchType::All)
-	, bExactMatch(true)
-	, NetMode(EFlowNetMode::Authority)
+UFlowNode_NotifyActor::UFlowNode_NotifyActor()
 {
 #if WITH_EDITOR
 	Category = TEXT("Actor");

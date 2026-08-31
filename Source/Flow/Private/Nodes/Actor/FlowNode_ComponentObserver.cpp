@@ -1,13 +1,12 @@
 // Copyright https://github.com/MothCocoon/FlowGraph/graphs/contributors
-
 #include "Nodes/Actor/FlowNode_ComponentObserver.h"
+
 #include "FlowSubsystem.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(FlowNode_ComponentObserver)
 
-UFlowNode_ComponentObserver::UFlowNode_ComponentObserver(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-	, IdentityMatchType(EFlowTagContainerMatchType::HasAnyExact)
+UFlowNode_ComponentObserver::UFlowNode_ComponentObserver()
+	: IdentityMatchType(EFlowTagContainerMatchType::HasAnyExact)
 	, SuccessLimit(1)
 	, SuccessCount(0)
 {
@@ -41,7 +40,11 @@ void UFlowNode_ComponentObserver::ExecuteInput(const FName& PinName)
 
 void UFlowNode_ComponentObserver::OnLoad_Implementation()
 {
-	if (IdentityTags.IsValid())
+	if (SuccessLimit > 0 && SuccessCount == SuccessLimit)
+	{
+		TriggerOutput(TEXT("Completed"), true);
+	}
+	else if (IdentityTags.IsValid())
 	{
 		StartObserving();
 	}
@@ -122,9 +125,9 @@ void UFlowNode_ComponentObserver::OnComponentUnregistered(UFlowComponent* Compon
 
 void UFlowNode_ComponentObserver::OnEventReceived()
 {
+	SuccessCount++;
 	TriggerFirstOutput(false);
 
-	SuccessCount++;
 	if (SuccessLimit > 0 && SuccessCount == SuccessLimit)
 	{
 		TriggerOutput(TEXT("Completed"), true);
@@ -155,6 +158,16 @@ FString UFlowNode_ComponentObserver::GetNodeDescription() const
 	return GetIdentityTagsDescription(IdentityTags);
 }
 
+FString UFlowNode_ComponentObserver::GetStatusString() const
+{
+	if (ActivationState == EFlowNodeState::Active && RegisteredActors.Num() == 0)
+	{
+		return NoActorsFound;
+	}
+
+	return FString();
+}
+
 EDataValidationResult UFlowNode_ComponentObserver::ValidateNode()
 {
 	if (IdentityTags.IsEmpty())
@@ -164,15 +177,5 @@ EDataValidationResult UFlowNode_ComponentObserver::ValidateNode()
 	}
 
 	return EDataValidationResult::Valid;
-}
-
-FString UFlowNode_ComponentObserver::GetStatusString() const
-{
-	if (ActivationState == EFlowNodeState::Active && RegisteredActors.Num() == 0)
-	{
-		return NoActorsFound;
-	}
-
-	return FString();
 }
 #endif

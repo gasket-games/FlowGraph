@@ -25,7 +25,7 @@
 /////////////////////////////////////////////////////
 // Flow Node
 
-UEdGraphNode* FFlowGraphSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode /* = true*/)
+UEdGraphNode* FFlowGraphSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2f& Location, bool bSelectNewNode /* = true*/)
 {
 	// prevent adding new nodes while playing
 	if (GEditor->PlayWorld != nullptr)
@@ -41,7 +41,7 @@ UEdGraphNode* FFlowGraphSchemaAction_NewNode::PerformAction(class UEdGraph* Pare
 	return nullptr;
 }
 
-UFlowGraphNode* FFlowGraphSchemaAction_NewNode::CreateNode(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const UClass* NodeClass, const FVector2D Location, const bool bSelectNewNode /*= true*/)
+UFlowGraphNode* FFlowGraphSchemaAction_NewNode::CreateNode(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const UClass* NodeClass, const FVector2f Location, const bool bSelectNewNode /*= true*/)
 {
 	check(NodeClass);
 
@@ -203,25 +203,20 @@ UFlowGraphNode* FFlowGraphSchemaAction_NewNode::ImportNode(UEdGraph* ParentGraph
 
 FText FFlowGraphSchemaAction_NewNode::GetNodeCategory(const UFlowNodeBase* Node, const UFlowGraphSettings& GraphSettings)
 {
-	const FString* CategoryOverridenByUser = GraphSettings.OverridenNodeCategories.Find(Node->GetClass());
-	if (CategoryOverridenByUser && !CategoryOverridenByUser->IsEmpty())
-	{
-		return FText::FromString(*CategoryOverridenByUser);
-	}
-
-	return FText::FromString(Node->GetNodeCategory());
+	const FString NodeCategoryString = UFlowGraphSettings::GetNodeCategoryForNode(*Node);
+	return FText::FromString(NodeCategoryString);
 }
 
 /////////////////////////////////////////////////////
 // New SubNode (AddOn)
 
-UEdGraphNode* FFlowSchemaAction_NewSubNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+UEdGraphNode* FFlowSchemaAction_NewSubNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2f& Location, bool bSelectNewNode)
 {
 	ParentNode->AddSubNode(NodeTemplate, ParentGraph);
 	return nullptr;
 }
 
-UEdGraphNode* FFlowSchemaAction_NewSubNode::PerformAction(class UEdGraph* ParentGraph, TArray<UEdGraphPin*>& FromPins, const FVector2D Location, bool bSelectNewNode)
+UEdGraphNode* FFlowSchemaAction_NewSubNode::PerformAction(class UEdGraph* ParentGraph, TArray<UEdGraphPin*>& FromPins, const FVector2f& Location, bool bSelectNewNode)
 {
 	return PerformAction(ParentGraph, nullptr, Location, bSelectNewNode);
 }
@@ -275,7 +270,7 @@ TSharedPtr<FFlowSchemaAction_NewSubNode> FFlowSchemaAction_NewSubNode::AddNewSub
 /////////////////////////////////////////////////////
 // Paste
 
-UEdGraphNode* FFlowGraphSchemaAction_Paste::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, const bool bSelectNewNode/* = true*/)
+UEdGraphNode* FFlowGraphSchemaAction_Paste::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2f& Location, const bool bSelectNewNode/* = true*/)
 {
 	// prevent adding new nodes while playing
 	if (GEditor->PlayWorld == nullptr)
@@ -289,7 +284,7 @@ UEdGraphNode* FFlowGraphSchemaAction_Paste::PerformAction(class UEdGraph* Parent
 /////////////////////////////////////////////////////
 // New Comment
 
-UEdGraphNode* FFlowGraphSchemaAction_NewComment::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, const bool bSelectNewNode/* = true*/)
+UEdGraphNode* FFlowGraphSchemaAction_NewComment::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2f& Location, const bool bSelectNewNode/* = true*/)
 {
 	// prevent adding new nodes while playing
 	if (GEditor->PlayWorld != nullptr)
@@ -297,8 +292,11 @@ UEdGraphNode* FFlowGraphSchemaAction_NewComment::PerformAction(class UEdGraph* P
 		return nullptr;
 	}
 
-	UEdGraphNode_Comment* CommentTemplate = NewObject<UEdGraphNode_Comment>();
-	FVector2D SpawnLocation = Location;
+	const FScopedTransaction Transaction(LOCTEXT("AddComment", "Add Comment"));
+	ParentGraph->Modify();
+
+	UEdGraphNode_Comment* CommentNode = NewObject<UEdGraphNode_Comment>(ParentGraph, UEdGraphNode_Comment::StaticClass(), NAME_None, RF_Transactional);
+	FVector2f SpawnLocation = Location;
 
 	const TSharedPtr<SFlowGraphEditor> FlowGraphEditor = FFlowGraphUtils::GetFlowGraphEditor(ParentGraph);
 	if (FlowGraphEditor.IsValid())
@@ -306,13 +304,30 @@ UEdGraphNode* FFlowGraphSchemaAction_NewComment::PerformAction(class UEdGraph* P
 		FSlateRect Bounds;
 		if (FlowGraphEditor->GetBoundsForSelectedNodes(Bounds, 50.0f))
 		{
-			CommentTemplate->SetBounds(Bounds);
-			SpawnLocation.X = CommentTemplate->NodePosX;
-			SpawnLocation.Y = CommentTemplate->NodePosY;
+			CommentNode->SetBounds(Bounds);
+			SpawnLocation.X = CommentNode->NodePosX;
+			SpawnLocation.Y = CommentNode->NodePosY;
 		}
 	}
 
-	return FEdGraphSchemaAction_NewNode::SpawnNodeFromTemplate<UEdGraphNode_Comment>(ParentGraph, CommentTemplate, SpawnLocation);
+	// register to the graph
+	CommentNode->CreateNewGuid();
+	ParentGraph->AddNode(CommentNode, false, bSelectNewNode);
+
+	// set position
+	CommentNode->NodePosX = SpawnLocation.X;
+	CommentNode->NodePosY = SpawnLocation.Y;
+
+	// set default values
+	CommentNode->PostPlacedNewNode();
+
+	// select in editor UI
+	if (bSelectNewNode && FlowGraphEditor.IsValid())
+	{
+		FlowGraphEditor->SelectSingleNode(CommentNode);
+	}
+
+	return CommentNode;
 }
 
 #undef LOCTEXT_NAMESPACE
